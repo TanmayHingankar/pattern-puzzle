@@ -1,8 +1,7 @@
 // src/components/Game.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { levels } from "../levels";
-import Grid from "./Grid";
-import type { CellHighlight, GamePhase } from "./Grid";
+import Grid, { CellHighlight, GamePhase } from "./Grid";
 
 type ResultState = {
   correct: Set<number>;
@@ -21,6 +20,77 @@ const Game: React.FC = () => {
   const [score, setScore] = useState(0);
   const [result, setResult] = useState<ResultState | null>(null);
   const [attempts, setAttempts] = useState(0);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // ----- SOUND SYSTEM (Web Audio API) -----
+  const getAudioContext = () => {
+    // @ts-expect-error: webkitAudioContext for older browsers
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContextClass();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playTone = (
+    frequency: number,
+    duration: number,
+    type: OscillatorType = "sine",
+    volume = 0.3
+  ) => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = type;
+    oscillator.frequency.value = frequency;
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.05);
+  };
+
+  const playClickSound = () => {
+    // Short soft click
+    playTone(440, 0.05, "square", 0.15);
+  };
+
+  const playCorrectSound = () => {
+    // Small ascending arpeggio
+    playTone(880, 0.12, "sine", 0.3);
+    setTimeout(() => playTone(1046.5, 0.12, "sine", 0.3), 110);
+  };
+
+  const playWrongSound = () => {
+    // Low short buzz
+    playTone(220, 0.18, "sawtooth", 0.25);
+  };
+
+  const playLevelUpSound = () => {
+    // Three-note happy sequence
+    playTone(659.25, 0.09, "triangle", 0.25);
+    setTimeout(() => playTone(880, 0.09, "triangle", 0.25), 90);
+    setTimeout(() => playTone(1046.5, 0.12, "triangle", 0.25), 180);
+  };
+
+  const playResetSound = () => {
+    // Soft down-up sweep
+    playTone(392, 0.08, "sine", 0.2);
+    setTimeout(() => playTone(349.23, 0.08, "sine", 0.18), 80);
+  };
+  // ----- END SOUND SYSTEM -----
 
   const currentLevel = levels[levelIndex];
 
@@ -58,6 +128,9 @@ const Game: React.FC = () => {
   }, [levelIndex]);
 
   const handleToggleCell = (index: number) => {
+    if (phase !== "answering") return;
+    playClickSound();
+
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(index)) {
@@ -109,6 +182,9 @@ const Game: React.FC = () => {
       const attemptPenalty = Math.max(0, 3 - attempts); // First try gives more
       const gained = 10 + bonus + attemptPenalty * 5;
       setScore((prev) => prev + gained);
+      playCorrectSound();
+    } else {
+      playWrongSound();
     }
   };
 
@@ -116,9 +192,11 @@ const Game: React.FC = () => {
     setPhase("answering");
     setSelected(new Set());
     setResult(null);
+    playClickSound();
   };
 
   const handleNextLevel = () => {
+    playLevelUpSound();
     if (levelIndex < levels.length - 1) {
       setLevelIndex((prev) => prev + 1);
     } else {
@@ -134,6 +212,7 @@ const Game: React.FC = () => {
     setSelected(new Set());
     setResult(null);
     setAttempts(0);
+    playResetSound();
   };
 
   // Build highlight map for result phase
@@ -198,7 +277,9 @@ const Game: React.FC = () => {
         )}
         {phase === "result" && result && (
           <p>
-            {result.isPerfect ? "🎉 Perfect! You cracked the pattern." : "❌ Not quite. Check the feedback and try again!"}
+            {result.isPerfect
+              ? "🎉 Perfect! You cracked the pattern."
+              : "❌ Not quite. Check the feedback and try again!"}
           </p>
         )}
       </div>
@@ -235,7 +316,9 @@ const Game: React.FC = () => {
 
             {result.isPerfect && (
               <button className="btn btn--primary" onClick={handleNextLevel}>
-                {levelIndex === levels.length - 1 ? "Restart from Level 1 🔄" : "Next Level ⏭"}
+                {levelIndex === levels.length - 1
+                  ? "Restart from Level 1 🔄"
+                  : "Next Level ⏭"}
               </button>
             )}
           </div>
