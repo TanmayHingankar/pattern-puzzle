@@ -1,7 +1,8 @@
 // src/components/Game.tsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { levels } from "../levels";
-import Grid, { CellHighlight, GamePhase } from "./Grid";
+import Grid from "./Grid";
+import type { CellHighlight, GamePhase } from "./Grid";
 
 type ResultState = {
   correct: Set<number>;
